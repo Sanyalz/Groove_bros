@@ -1,0 +1,154 @@
+
+Revision History
+
+
+
+ 
+
+1)	Describe the purpose of this document 
+
+The purpose of this document is to introduce my project and explain how it works and its purpose. In this document I will explain what my project is, 
+describe main functions and the way it works. Also there is a screen shot in the end of the document of how approximately client`s window will be look like. 
+
+
+Product name: Groove bros
+Version: 1.0
+1.1	System Overview
+Purpose of software
+
+The  purpose of my software – to allow people to listen music together and communicate. There will be a few rooms with different genres of music and up to 15 people in the room, 
+also in every room there is a chat where people can talk to each other. Also there is a bot in every chat, and every  song he creates a vote, where users can vote for next song, 
+or add their songs into the voting list, and other clients can vote for someone`s song. The song that was chosen in voting will be played next. 
+
+
+
+
+
+Related software or hardware 
+Operating systems 
+My Software will work on few operating systems: windows and linux
+
+1.1.1	End-user characteristics 
+Possible and/or probable changes in functionality 
+Guest – has only access to rooms, without right to vote or add songs to voting
+User – has right to vote, add songs in voting
+Moderator -  has access to cmd, special chat where mod can send commands to server, like mute user, ban user. Mod has rights to moderate all rooms. 
+Prime user – has right to create rooms, and in rooms he created, he has moderator rights.
+
+1.1.2	General Constraints
+Describe any global limitations or constraints that have a significant impact on the design of the system's software (and describe the associated impact). 
+Such constraints may be imposed by any of the following (the list is not exhaustive): 
+•	Hardware or software environment 
+PC, windows
+•	Interface/protocol requirements 
+I will use UPD protocol for streaming music and TCP for other data, like messages in chat etc.
+•	Data repository and distribution requirements 
+For clints there is no special data require, for server there have to be few gigabytes of storing songs. 
+
+•	Security requirements (or other such regulations) 
+There will be two types if encryption, symmetric encryption for music streaming and
+ Asymmetric for things like messages in chat. 
+•	Memory and other capacity limitations 
+•	Network communications 
+ I will use UPD protocol for streaming music and TCP for other data, like messages in chat etc.
+
+•	Verification and validation requirements (testing) 
+I will use two factor authentication in my project, when logging in, the system requests a password and also sends a code to the email, 
+which needs to be entered in the application.
+
+1.1.3	Goals and Guidelines
+Describe any goals, guidelines, principles, or priorities, which dominate or embody the design of the system's software. Such goals might be: 
+•	Working, looking, or "feeling" like an existing product 
+
+1.2	Architectural Strategies
+Describe any design decisions and/or strategies that affect the overall organization of the system and its higher-level structures. 
+These strategies should provide insight into the key abstractions and mechanisms used in the system architecture. 
+Describe the reasoning employed for each decision and/or strategy (possibly referring to previously stated design goals and principles) 
+and how any design goals or priorities were balanced or traded-off. Such decisions might concern (but are not limited to) things like the following: 
+•	Use of a particular type of product (programming language, database, library, etc. ...) 
+Programming language: python
+Database: SQLite
+Libraries: main library is spotipy and it allows to download song by its name
+1.3	System Architecture
+This section should provide a high-level overview of how the functionality and responsibilities of the system were partitioned and then assigned to subsystems or components. Don't go into too much detail about the individual components themselves (there is a subsequent section for detailed component descriptions). The main purpose here is to gain a general understanding of how and why the system was decomposed, and how the individual parts work together to provide the desired functionality. 
+ 
+
+
+Presentation layer – all the visible parts like client chat window, all the buttons 
+
+Business Logic Layer –callbacks, and all the logic of software
+
+Communication Layer – Responsible for data exchange between the client and the server and for message processing
+
+
+
+
+
+
+There will be five files, Client_GUI, Server_GUI, Client_BL, Server_BL, and protocol (For communication layer)
+			                                                Log in / Registration  
+First of all, user have to register or log in in their account. There will be two factor authentication,
+user should enter his password and after he receives letter with one time code.
+				                                                    Voting
+In the middle of the song bot creates voting for the next song. Songs for voting generates by using spotify recommendations (spotify api), 
+or by asking chatgpt (haven't decided yet). Bot adds 5 songs to voting, and users can add 5 more songs on their choice. After all the songs were added, the voting begins. 
+
+			                                          Streaming song to clients 
+Server receives chosen song, after that,  server requires song link (link on this song in spotify) by using spotify api and downloads track in 
+mp3 format by using spotdl library (this library allows you to download a track using a link to it) and after stream song to all the clients in the room.
+Every few seconds server will send time marks to users for synchronization of audio playback. After the song ends, server delete it, and download the next one (I know that it isn’t best way, but I haven’t found another way yet)
+			                                        
+                                                      Encryption 
+
+There will be two types of encryption: Symmetric encryption for audio streaming, and Asymmetric encryption for everything else. Things like user`s data, messages in the chat and etc. will be encrypted by asymmetric encryption as it more reliable, and audio will be encrypted by symmetric encryption as it way more faster for “big” files.
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+1.3.1	Subsystem Architecture
+1.3.1.1	Use Case – Login (sample)
+
+(Image folder)
+
+ 
+
+
+
+
+1.3.1.2	Use Case – Main Workflow (sample)
+
+(Image folder)
+
+
+
+
+
+ 
+1.3.1.3	Sequence Diagram – Login (sample)  
+
+(Image folder)
+
+1.3.1.4	Sequence Diagram – Main Workflow (sample)
+ 
+(Image folder)
+
+
+1.3.1.5	DB tables (sample)
+
+(Image folder)
+
+ 
+
+ 
+
+2.	 
