@@ -1,0 +1,19 @@
+# GUI Framework
+PyQt5==5.15.9
+
+# Audio Processing
+pyaudio==0.2.13
+
+# Networking
+python-socketio==5.8.0
+socketIO-client==0.7.2
+
+# System/Utilities
+logging==0.4.9.6
+astroid==2.15.5
+
+# Threading (built-in)
+# time (built-in)
+# sys (built-in)
+# functools (built-in)
+# threading (built-in)
