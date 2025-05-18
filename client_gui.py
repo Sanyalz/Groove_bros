@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLa
 from PyQt5.QtCore import Qt
 
 # Default IP and port
-SRV_IP = "127.0.0.1"
+SRV_IP = "10.100.102.166"
 SRV_PORT = "8822"
 
 
@@ -180,6 +180,23 @@ class Client_GUI(QtWidgets.QWidget):
         self.top_panel_layout.addWidget(self.song_info_container)
         self.top_panel_layout.addStretch()
 
+        # Skip button layout (just above chat scroll area)
+        self.skip_button_layout = QtWidgets.QHBoxLayout()
+        self.skip_button_layout.setContentsMargins(0, 10, 0, 10)
+        self.skip_button_layout.addStretch()
+
+        # Right-side button container (vertical layout)
+        self.right_button_container = QtWidgets.QWidget()
+        self.right_button_layout = QtWidgets.QVBoxLayout(self.right_button_container)
+        self.right_button_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignRight)
+        self.right_button_layout.setSpacing(10)
+
+        # Right-side button container (vertical layout)
+        self.right_button_container = QtWidgets.QWidget()
+        self.right_button_layout = QtWidgets.QVBoxLayout(self.right_button_container)
+        self.right_button_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignRight)
+        self.right_button_layout.setSpacing(10)
+
         # Leave button
         self.leave_button = QtWidgets.QPushButton("Leave")
         self.leave_button.setStyleSheet("""
@@ -191,7 +208,26 @@ class Client_GUI(QtWidgets.QWidget):
         """)
         self.leave_button.setFixedSize(150, 60)
         self.leave_button.clicked.connect(self.leave)
-        self.top_panel_layout.addWidget(self.leave_button, alignment=QtCore.Qt.AlignTop)
+        self.right_button_layout.addWidget(self.leave_button)
+
+        # Skip button
+        self.skip_button = QtWidgets.QPushButton("Skip")
+        self.skip_button.setStyleSheet("""
+            background-color: #4D79FF;
+            color: white;
+            font-size: 30px;
+            padding: 8px 15px;
+            border-radius: 10px;
+        """)
+        self.skip_button.setFixedSize(150, 60)
+        self.skip_button.clicked.connect(self.skip_song)
+        self.right_button_layout.addWidget(self.skip_button)
+
+        # Add right-side container to top panel layout
+        self.top_panel_layout.addWidget(self.right_button_container, alignment=QtCore.Qt.AlignTop)
+
+        # Add right-side container to top panel layout
+        self.top_panel_layout.addWidget(self.right_button_container, alignment=QtCore.Qt.AlignTop)
 
         # Add top panel to main layout
         self.main_layout.addWidget(self.top_panel, alignment=QtCore.Qt.AlignTop)
@@ -243,6 +279,8 @@ class Client_GUI(QtWidgets.QWidget):
         # Sending the message to server
         self.client.send(f"CON {self.room} " + self.client_login)
 
+    def skip_song(self):
+        self.create_skip_poll()
     # Sending user's message from chat to server
     def send_message(self):
         # Get text from input field
@@ -274,7 +312,6 @@ class Client_GUI(QtWidgets.QWidget):
                                             border-radius: 20px;  /* Rounded corners */
                                             font-size: 35px;  /* Increase font size */
                                             max-width: 800px;  /* Increase max width so text stays on one line */
-
                                         """)
 
                     # Create a layout for the label inside the widget
@@ -562,7 +599,6 @@ class Client_GUI(QtWidgets.QWidget):
         self.message_area_layout.addWidget(self.nickname_label, alignment=QtCore.Qt.AlignLeft)
 
 
-        print("OMG I HATE NIGGERS")
         # Whole message widget
         self.vote_widget = QtWidgets.QWidget(self)
         self.vote_widget.setStyleSheet("""
@@ -606,15 +642,12 @@ class Client_GUI(QtWidgets.QWidget):
 
         # Total votes calculation
         total_votes = sum(songs_dict.values())
-        print("WE ARE here")
+
         # Loop for each pair of key:value in songs votes dictionary
         for song, votes in songs_dict.items():
-            print("black nigga")
-            print(song)
             whole_string = song
             song_name = song.split("::::")[0]
             artist = song.split("::::")[1].split(":::::")[0]
-            print(song_name, artist)
             self.voting_option(whole_string, song_name, artist, votes, total_votes)
 
         # Horizontal layout for "add song button" button
@@ -892,6 +925,153 @@ class Client_GUI(QtWidgets.QWidget):
             self.timer_label.setText(f"Until the end of the voting: {timer}")
         except:
             pass
+
+
+
+
+
+
+
+    # SKIP SONG POLL
+
+    def create_skip_poll(self):
+        # Nickname label
+        self.nickname_label = QtWidgets.QLabel('Dj_Arbuzz', self)
+        self.nickname_label.setStyleSheet("font-size: 20px; color: gray; font-weight: bold;")
+        self.message_area_layout.addWidget(self.nickname_label, alignment=QtCore.Qt.AlignLeft)
+
+        # Whole message widget
+        self.skip_widget = QtWidgets.QWidget(self)
+        self.skip_widget.setStyleSheet("""
+            QWidget {
+                background-color: #edf2ff;
+                padding-top: 20px;
+                padding-left: -40px;
+                border-radius: 30px; 
+                max-width: 800px;  
+            }
+        """)
+
+        # Size policy
+        self.skip_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Fixed
+        )
+
+        # Vertical layout for skip poll
+        self.skip_layout = QtWidgets.QVBoxLayout(self.skip_widget)
+        self.skip_layout.setAlignment(QtCore.Qt.AlignLeft)
+        self.skip_layout.setSpacing(10)
+
+        # Poll question
+        self.skip_label = QtWidgets.QLabel("Skip to the next song?", self)
+        self.skip_label.setStyleSheet("""
+            font-size: 30px;
+            font-weight: bold;
+            color: #333333; 
+            margin-bottom: 30px; 
+        """)
+        self.skip_layout.addWidget(self.skip_label)
+
+        # Voting data
+        self.skip_votes = {"Yes": 0, "No": 0}
+        self.skip_buttons = []
+        self.skip_progress_bars = {}
+        self.skip_percentages = {}
+
+        # Create Yes/No options
+        self.create_skip_option("Yes", "Yes", 0)
+
+        # Add to main layout
+        self.message_area_layout.addWidget(self.skip_widget, alignment=QtCore.Qt.AlignLeft)
+
+    def create_skip_option(self, option_id, option_text, votes):
+        # Container widget
+        option_widget = QtWidgets.QWidget()
+        option_layout = QtWidgets.QVBoxLayout(option_widget)
+        option_layout.setContentsMargins(0, 0, 0, 0)
+        option_layout.setSpacing(5)
+
+        # Horizontal layout for voting elements
+        vote_row = QtWidgets.QHBoxLayout()
+        vote_row.setSpacing(10)
+
+        # Voting button
+        button = QtWidgets.QPushButton()
+        button.setFixedSize(30, 30)
+        button.setCheckable(True)
+        button.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 2px solid #3498db;
+                border-radius: 15px;
+            }
+            QPushButton:checked {
+                background-color: blue;
+            }
+        """)
+        button.clicked.connect(lambda _, s=option_id, b=button: self.on_skip_vote_selected(s, b))
+        vote_row.addWidget(button)
+
+        # Option text
+        option_label = QtWidgets.QLabel(option_text)
+        option_label.setStyleSheet("font-size: 30px; color: #000000;")
+        vote_row.addWidget(option_label)
+
+        # Percentage label
+        percentage_label = QtWidgets.QLabel("0%")
+        percentage_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #333333;")
+        percentage_label.setVisible(False)
+        vote_row.addWidget(percentage_label)
+
+        vote_row.addStretch()
+        option_layout.addLayout(vote_row)
+
+        # Progress bar
+        progress_bar = QtWidgets.QProgressBar()
+        progress_bar.setRange(0, 100)
+        progress_bar.setValue(0)
+        progress_bar.setTextVisible(False)
+        progress_bar.setStyleSheet("""
+            QProgressBar {
+                height: 10px;
+                background: transparent;
+                border-radius: 5px;
+            }
+            QProgressBar::chunk {
+                background: #295af0;
+                border-radius: 5px;
+            }
+        """)
+        option_layout.addWidget(progress_bar)
+
+        # Store references
+        self.skip_buttons.append(button)
+        self.skip_progress_bars[option_id] = progress_bar
+        self.skip_percentages[option_id] = percentage_label
+        self.skip_votes[option_id] = votes
+
+        # Add to layout
+        self.skip_layout.insertWidget(1, option_widget)
+
+    def on_skip_vote_selected(self, option, button):
+        # Uncheck all other buttons
+        for btn in self.skip_buttons:
+            if btn != button:
+                btn.setChecked(False)
+
+        # Update votes (this would be connected to your actual voting system)
+        self.skip_votes[option] += 1
+
+        # Calculate total votes
+        total_votes = sum(self.skip_votes.values())
+
+        # Update UI
+        for opt in self.skip_votes:
+            percentage = (self.skip_votes[opt] / total_votes * 100) if total_votes > 0 else 0
+            self.skip_progress_bars[opt].setValue(int(percentage))
+            self.skip_percentages[opt].setText(f"{int(percentage)}%")
+            self.skip_percentages[opt].setVisible(total_votes > 0)
 
     def leave(self):
         """
