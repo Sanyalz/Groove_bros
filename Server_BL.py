@@ -1,7 +1,21 @@
+import time
+from http.client import responses
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+
+import bcrypt
+import base64
+
+
+
 import pyaudio
 import wave
 from db import *
 from song_url import *
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 from Session import *
 from Active_votings import *
 import av
@@ -35,22 +49,34 @@ class Server_BL():
     def __init__(self, port, client_callback, message_callback):
 
         self.port = port
+        self.ping_port = 12345
 
         # Dictionary where keys are the name of the rooms and the value is list which contains two numbers,
         # first id amount of people voted for skip and the second is total amount of people in room
-        self.skip_dict = {}
         # Lists for users in session and current polls
         self.session = []
         self.votings = []
-        # Dict with ports of rooms (every room has its music streaming socket)
-        self.ports = {}
 
-        # Dict which store room names and number 0 or 1 as a value,
-        # 1 if any song currently streamed in that room, else 0
-        self.Isstreaming = {}
+
+        self.ping_sockets = {}
+
+        # Generate a new private RSA key
+        self.private_key = rsa.generate_private_key(
+            public_exponent=65537,  # Commonly used public exponent
+            key_size=2048  # Key size in bits (use 3072 or 4096 for more security)
+        )
+
+        # Derive the public key from the private key
+        public_key = self.private_key.public_key()
+        # Serialize the private key to PEM format (as bytes)
+        self.public_key = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode()
 
         # Dict which saves audio sockets of users of each room
         self.roomsNusers = {}
+
 
         # Callback which adds new client into the table
         self.client_callback = client_callback
@@ -74,12 +100,16 @@ class Server_BL():
             self.server.bind(SRV_ADDR)
             self.server.listen()
             write_to_log(f"[SERVER] listening on {SRV_IP}")
-            # Loop running while the server is running
+
             while self.SRV_RUNNING:
                 # Save connected client data
                 client_socket, addr = self.server.accept()
                 # If new client connected , running separate thread to handle him
                 if client_socket:
+                    # Sending server`s public key
+
+                    self.send_message(client_socket, f"PUBLIC_KEY {self.public_key}")
+
                     # Create a separate thread for each new client
                     self.client_callback(addr)
                     thread = threading.Thread(target=self.handle_client, args=(client_socket, addr))
@@ -89,6 +119,8 @@ class Server_BL():
         except Exception as e:
             # Handle failure
             write_to_log(f"[Server] failed to set up server {e}")
+
+
 
     # Client handle function, will receive everything from client, and send back
     def handle_client(self, client_socket, addr):
@@ -115,10 +147,11 @@ class Server_BL():
 
                 write_to_log(f"[SERVER] received message from {addr} - {msg}")
 
+
                 if(cmd == "REG"):
                     self.sign_up_function(db, message, client_socket)
                 elif cmd == "LOG":
-                    log = self.login_function(db, message, client_socket, addr)
+                    log = self.login_func(db, message, client_socket, addr)
                 elif cmd == "CON":
                     self.connect_to_the_room(message, db, client_socket)
                 elif cmd == "LEV":
@@ -132,70 +165,202 @@ class Server_BL():
                 elif cmd == "ADD_SONG":
                     self.add_song(message)
                 elif cmd == "SKIP":
-                    self.skip_func(message[0])
+                    self.skip_func(message[0], db)
+                elif cmd == "GUEST":
+                    log = self.guest_func(message, db, client_socket, addr)
+                elif cmd == "BYE":
+                    self.disconnect_client(db, log)
         except:
-            connected = False
-            for user in self.session:
-                if user.get_log() == log:
-                    self.session.remove(user)
+            self.disconnect_client(db, log)
+
+    def disconnect_client(self, db, log):
+        for user in self.session:
+            if user.get_log() == log:
+                self.session.remove(user)
+                user.get_soc().close()
+        db.set_isLogged(log, False)
+
+    def guest_func(self, message, db, client_socket, addr):
+        nickname = message[0]
+        if (db.if_user_in_db(nickname) == False):
+            # Add new user
+            db.new_user(nickname, nickname, 'Guest')
+            self.session.append(Session(addr[0], addr[1], client_socket, message[0]))
+            # Send message size
+            response = "0"
+
+            db.set_isLogged(nickname, True)
+            res = nickname
+
+        else:
+            response = "1"
+            res = None
 
 
+        client_socket.sendall(len(response).to_bytes(4, byteorder='big'))
+        # Send message
+        client_socket.sendall(response.encode())
+        return res
+
+    def skip_func(self, room, db):
+        skip_list = db.get_skipPollList(room)
+        skip_list[0] = skip_list[0] + 1
+        skip_list[1] = self.count_users(room)
+        db.set_skipPollList(room, skip_list)
+        self.update_barchart(room, db)
 
 
     # SIGH UP AND LOGIN FUNCTIONS
     def sign_up_function(self, db, message, client_socket):
-        if (db.if_user_in_db(message[0]) == False):
+        login = message.pop(0)
+        encrypted_password = " ".join(message)
+
+        if (db.if_user_in_db(login) == False):
+            password = self.decrypt_password(encrypted_password)
+
+            # hash password with salt
+            hash_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
             # Add new user
-            db.new_user(str(client_socket), message[0], message[1])
+            db.new_user(login, hash_password, 'User')
             # Send message size
             response = "Successfully registered"
 
-            client_socket.sendall(len(response).to_bytes(4, byteorder='big'))
-            # Send message
-            client_socket.sendall(response.encode())
         else:
             # Send message size
             response = "Username already taken"
-            client_socket.sendall(len(response).to_bytes(4, byteorder='big'))
-            # Send message
-            client_socket.sendall(response.encode())
 
-    def login_function(self, db, message, client_socket, addr):
-        ret = '0'
-        try:
-            user_pas = db.get_user(message[0])
-            user_pas = str(user_pas)
-            if len(str(user_pas)) > 3:
-                if (user_pas.split("'")[1]) == message[1]:
-                    response = 'true'
-                    self.session.append(Session(addr[0], addr[1], client_socket, message[0]))
-                    ret = message[0]
-                else:
+        client_socket.sendall(len(response).to_bytes(4, byteorder='big'))
+        # Send message
+        client_socket.sendall(response.encode())
 
-                    response = 'false'
-            else:
-                response = 'false'
-            # Send message size
-            print(f"response: {response}")
-            client_socket.sendall(len(response).to_bytes(4, byteorder='big'))
-            # Send message
-            client_socket.sendall(response.encode(FORMAT))
-            print("sucesesfully sent")
-        except Exception as e:
-            print(f"Error: {e}")
-        return ret
-        # Func runs when client connect to the room
+    def login_func(self, db, message, client_socket, addr):
+        # Extract login from list
+        login = message.pop(0)
+        # Joining everything else together -> encrypted password
+        encrypted_password = " ".join(message)
+        # Decrypting password
+        entered_password = self.decrypt_password(encrypted_password)
+        # Get password's hash from database
+        password = db.get_user_password(login)
+        log = ''
+        # If there is no such user
+        if password == None:
+            password_matches = False
+        else:
+            # Else we compare hash from database with entered password (password_matches - boolean)
+            password_matches = bcrypt.checkpw(entered_password.encode(), password)
+        if password_matches == True:
+            # response which we send to the client
+            response = 'true'
+            # Add user to list which contains all currently connected users
+            self.session.append(Session(addr[0], addr[1], client_socket, login))
+            # Indicates in the database that the user is now online (logged in)
+            db.set_isLogged(login, True)
+            log = login
+        else:
+            # response
+            response = 'false'
+            # user's login
+            log = ''
+
+        # Send message size
+        client_socket.sendall(len(response).to_bytes(4, byteorder='big'))
+        # Send message
+        client_socket.sendall(response.encode(FORMAT))
+        # return user's login
+        return log
+
+    def decrypt_password(self, encrypted_password):
+
+        # decode to bytes
+        encrypted_bytes = base64.b64decode(encrypted_password)
+
+        # decrypt
+        password = self.private_key.decrypt(
+            encrypted_bytes,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        ).decode()
+
+
+        return password
+
+
+
+    # Function to hash a password
+    def hash_password(self, plain_password) -> bytes:
+        # Convert string to bytes
+        password_bytes = plain_password.encode('utf-8')
+
+        # Generate salt
+        salt = bcrypt.gensalt()  # You can specify complexity: bcrypt.gensalt(rounds=12)
+
+        # Hash password with salt
+        hashed = bcrypt.hashpw(password_bytes, salt)
+
+        return hashed
+
+    # users_public is expected to be a PEM-encoded public key string
+    def encrypt_symmetric_key_with_public_key(self, users_public: str, symmetric_key: bytes) -> bytes:
+        # Load public key
+        public_key = serialization.load_pem_public_key(users_public.encode())
+
+        # Encrypt symmetric key
+        encrypted_key = public_key.encrypt(
+            symmetric_key,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        return encrypted_key  # Still in bytes form
 
     def connect_to_the_room(self, message, db, client_socket):
+
         # Get username
-        user = message.pop(-1)
-        room = " ".join(message)
+        room = message.pop(0)
+        user = message.pop(0)
+        users_public = " ".join(message)
+
+
+        # If that client is the first one connected to this room
+        if not room in self.roomsNusers:
+            # Dictionary with room names as a jey, and list with connected sockets as a value
+            self.roomsNusers[room] = []
+
+            port = self.add_port(room, db)
+
+
+            db.new_room(room, port, self.count_users(room))
+
+            thread = threading.Thread(target=self.create_audio_socket, args=(room, port, ))
+            thread.start()
+
+
+
+        # Get symmetric key of the room
+        key = db.get_key(room)
+
+        #Converting string into bytes
+        key_bytes = key.encode()
+
+        encrypted_key = self.encrypt_symmetric_key_with_public_key(users_public, key_bytes)
+
+        encrypted_key_str = base64.b64encode(encrypted_key).decode()
+
+        self.send_message(client_socket, f"KEY {encrypted_key_str}")
+
+        self.send_message_to_everybody(room, "NEW_USER")
 
         # Sending previous messages in chat to connected user (also poll if he is the first user in room)
         for usr in self.session:
             if (usr.get_log() == user):
                 usr.set_room(room)
-                messages = f'MSGS {str(db.get_messages(room))}'
+                messages = f'MSGS {self.count_users(room)} {str(db.get_messages(room))}'
 
                 self.send_message(client_socket, messages)
 
@@ -220,19 +385,20 @@ class Server_BL():
 
                         self.send_message(client_socket, message)
 
-        if not room in self.roomsNusers:
-            self.skip_dict[room] = [0, 0]
-            self.Isstreaming[room] = 0
-            self.roomsNusers[room] = []
-            self.add_port(room)
 
-            thread = threading.Thread(target=self.create_audio_socket, args=(room,))
-            thread.start()
-
-        self.skip_dict[room][0] += 1
-        msg = f"PORT {str(self.ports[room])}"
-
+        msg = f"PORT {db.get_port(room)}"
         self.send_message(client_socket, msg)
+
+        if db.get_isSkipPollActive(room) == 1:
+            message = f"SKIP_POLL"
+            self.send_message(client_socket, message)
+
+        skip_poll_list = db.get_skipPollList(room)
+        skip_poll_list[1] = self.count_users(room)
+        db.set_skipPollList(room, skip_poll_list)
+        self.update_barchart(room, db)
+
+
 
     # GENERAL OPTIMISATION FUNCTIONS
 
@@ -261,10 +427,6 @@ class Server_BL():
         # Send message
         client_socket.sendall(message.encode(FORMAT))
 
-    def skip_func(self, room):
-        self.skip_dict[room][1] += 1
-        if (self.skip_dict[room][1] / self.skip_dict[room][0] >= 0.5):
-            self.send_songs_for_vote(room, 0)
 
     # FUNCTIONS CONCERN POLLS
 
@@ -290,10 +452,6 @@ class Server_BL():
         song = " ".join(song)
         # Function which receives user`s input and return top 3 spotify results by that request
         songs_list = search_songs(song)
-        try:
-            print(songs_list)
-        except:
-            pass
 
         messages = f'DYM {str(songs_list)}'
         # Sending search results to that user
@@ -337,12 +495,15 @@ class Server_BL():
     # When client leave the room, func deletes him from the list
     def leave_the_room(self, message, db, client_socket):
         # user`s login
-        user = message.pop(-1)
-        room = " ".join(message)
-        # Deleting user from room
-        count = 0
+        room = message.pop(0)
+        user = message.pop(0)
 
-        self.skip_dict[room][0] -= 1
+        if_voted = message.pop(0)
+        # Deleting user from room
+
+
+        self.send_message_to_all_users(room, "USER_LEFT")
+
 
 
         # Searching that exact user among the session list
@@ -351,44 +512,65 @@ class Server_BL():
                 # Setting room variable for the user None
                 usr.set_room(None)
             # Counting people in room
-            if (usr.get_room == room): count += 1
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        if count == 0:
+        if self.count_users(room) == 0:
             # If there is no users currently in the room, delete the voting
             for voting in self.votings:
                 if voting.get_room() == room:
                     self.votings.remove(voting)
+            db.set_isSkipPollActive(room, False)
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-    # Generating port for streaming music
+        skip_list = db.get_skipPollList(room)
+        skip_list[1] = self.count_users(room)
+        if int(if_voted) == 1:
+            skip_list[0] -= 1
+        db.set_skipPollList(room, skip_list)
+        self.update_barchart(room, db)
 
-    def add_port(self, room):
+
+    def update_barchart(self, room, db):
+
+        if (db.get_isSkipPollActive(room) == 1) and (db.get_skipPollList(room)[1] !=0) :
+            if int(db.get_skipPollList(room)[0])/int(db.get_skipPollList(room)[1]) > 0.5:
+                self.send_message_to_everybody(room, "SKIP_SONG")
+                for voting in self.votings:
+                    if voting.get_room() == room:
+                        self.votings.remove(voting)
+                db.set_isSkipPollActive(room, False)
+                skip_list = db.get_skipPollList(room)
+                skip_list[0] = 0
+                skip_list[1] = self.count_users(room)
+                db.set_skipPollList(room, skip_list)
+                # Send new voting
+                self.send_songs_for_vote(room, 0)
+            else:
+                skip_list = db.get_skipPollList(room)
+                self.send_message_to_everybody(room, f"UPDATE_BARCHART {skip_list[0]} {skip_list[1]}")
+
+    # Generating port for streaming music
+    def add_port(self, room, db):
         port = random.randint(1024, 65535)
-        if port not in self.ports.values() and port != self.port:
-            self.ports[room] = port
-        else: self.add_port(room)
+        if port not in db.get_all_ports() and port != self.port:
+            return port
+        else: return self.add_port(room, db)
 
 
     # Creating audio socket for specific room
-    def create_audio_socket(self, room):
+    def create_audio_socket(self, room, port):
         audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        audio_socket.bind(("", self.ports[room]))
+        audio_socket.bind(("", port))
         audio_socket.listen(5)
+        db = database()
         while True:
             user_audio, addr = audio_socket.accept()
-            print("Client connected")
             # If there is no currently stream
-            if self.Isstreaming[room] == 0:
+            if db.get_isStreaming(room) == 0:
                 msg = 'FINE'
             # Else we are sending all the data about current song.
             else:
-                for voting in self.votings:
-                    if voting.get_room() == room:
-                        info = voting.get_choosen_song()
-                        song = info.split(":::::")[0]
-                        song = song.replace("::::", "-")
-                        link = info.split(":::::")[-1]
-                        msg = f"STREAM {song} {link}"
-                        print(msg)
+                info = db.get_currentSong(room)
+                msg = f"START_STREAM {info}"
+
             self.send_message(user_audio, msg)
             if room not in self.roomsNusers:
                 self.roomsNusers[room] = []
@@ -407,7 +589,7 @@ class Server_BL():
             output_stream.encode(frame)
         output.close()
 
-    def streaming_current_file(self, room, song_name, link):
+    def streaming_current_file(self, room, db):
         # Ensure the directory exists and is not empty
         folder_path = Path("songs") / room
         if folder_path.exists() and len(os.listdir(folder_path)) > 0:
@@ -421,48 +603,76 @@ class Server_BL():
                 song = files[0].name
 
                 wf = wave.open(f'songs/{room}/{song}', 'rb')
-                self.send_message_to_everybody(room, f"STREAM {song_name} {link}")
+                song = db.get_currentSong(room)
+                self.send_message_to_everybody(room, f"START_STREAM {song}")
+                db.set_isStreaming(room, True)
 
-                self.Isstreaming[room] = 1
+                # Audio file parameters
+                framerate = wf.getframerate()
+                sample_width = wf.getsampwidth()
+                num_channels = wf.getnchannels()
+                bytes_per_frame = sample_width * num_channels
+
+                # Frames in 30 seconds
+                frames_30_sec = framerate * 5
+
+                frames_sent = 0
+
+                skip_triggered = False
                 while True:
-                    print("bf sleep")
-                    data = wf.readframes(CHUNK_SIZE)
-                    print("i hate kfc people")
-                    if not data:
-                        self.get_recommendations(song, [], self.session, room)
+                    if db.get_isDownloading(room) == False:
+                        data = wf.readframes(CHUNK_SIZE)
+                        if not data:
+                            self.get_recommendations(song, [], self.session, room)
+                            break
+
+                        count = 0
+                        for audio_socket in self.roomsNusers[room]:
+                            try:
+                                count += 1
+                                audio_socket.sendall(data)
+
+
+                            except:
+                                try:
+                                    self.roomsNusers[room].remove(audio_socket)
+                                    audio_socket.close()
+                                except ValueError:
+                                    pass
+                        if count == 0:
+                            db.set_isStreaming(room, False)
+                            return
+
+                        #Frames count
+                        frames_sent += len(data) // bytes_per_frame
+
+                        # Here we catch the moment when song on 30 seconds
+                        if frames_sent >= frames_30_sec and skip_triggered == False:
+                            self.send_message_to_everybody(room, "SKIP_POLL")
+                            db.set_isSkipPollActive(room, True)
+                            skip_triggered = True
+                    else:
                         break
 
-                    count = 0
-                    for audio_socket in self.roomsNusers[room]:
-                        try:
-                            count += 1
-                            print("before send")
-                            print(audio_socket)
-                            audio_socket.sendall(data)
-                            print('after send')
 
-                        except:
-                            print("Client disconnected")
-                            try:
-                                self.roomsNusers[room].remove(audio_socket)
-                            except ValueError:
-                                print("Client already removed")
-                            print("Client removed from the list")
-                    print(count)
-                    if count == 0:
-                        self.Isstreaming[room] = 0
-                        return
-                    print(f"Sent to {count} clients")
+    def encrypt_msg(self, room, message):
+        db = database()
+        key = db.get_key(room)
+        fernet = Fernet(key.encode())  # Ensure key is in bytes
+        encrypted_bytes = fernet.encrypt(message.encode())  # Encrypt message
+        return encrypted_bytes.decode()
 
     def download_and_stream_song(self, song_name, artist_name, link, room):
-        msg = f"MSG Dj_Arbuzz Downloading the song..."
-        for usr in self.session:
-            if (usr.get_room() == room):
-                # Send message size
-                sock = usr.get_sock()
-                sock.sendall(len(msg).to_bytes(4, byteorder='big'))
-                # Send message
-                sock.sendall(msg.encode())
+        db = database()
+        db.set_currentSong(room, f"{artist_name}:::{song_name}:::{link}")
+        db.set_isDownloading(room, True)
+        db.set_isStreaming(room, False)
+
+        time.sleep(0.5)
+        msg = self.encrypt_msg(room, "Downloading the song...")
+        msg = f"MSG Dj_Arbuzz {msg}"
+
+        self.send_message_to_all_users(room, msg)
 
         # Deleting songs if they are any
         folder_path = Path("songs") / room
@@ -483,29 +693,22 @@ class Server_BL():
             "--audio-format", "wav",  # Convert to WAV format
             "-o", f"{output_dir}/%(title)s.%(ext)s",  # Save in the specified directory
             "--match-filter", "duration < 600",  # Filter out long videos (e.g., >10 minutes)
-            "--ffmpeg-location", "C:/Users/SA/music n chill/ffmpeg/bin"
+            "--ffmpeg-location", "C:/Users/SaLu/Groove bros/ffmpeg/bin"
         ]
 
         # Run the command
         result = subprocess.run(command, capture_output=True, text=True)
 
-        # Print the output for debugging
-        if result.returncode == 0:
-            print("Download successful!")
-            print(result.stdout)
-        else:
-            print("Download failed!")
-            print(result.stderr)
 
+        db.set_isDownloading(room, False)
         # if the room is empty, deleting downloaded song
         if self.count_users(room) == 0:
             folder_path = Path("songs") / room
             if folder_path.exists():
                 [file.unlink() for file in folder_path.glob("*") if file.is_file()]
             return
-        print("READY!")
 
-        self.streaming_current_file(room, f"{song_name}-{artist_name}", link)
+        self.streaming_current_file(room, db)
 
     def start_timer(self, voting):
         db = database()
@@ -515,7 +718,6 @@ class Server_BL():
         art = chosen_song.split("::::")
         song_name = art.pop(0)
         art = "::::".join(art)
-        print(art)
         song_artist = art.split(":::::")[0]
         link = art.split(":::::")[-1]
 
@@ -532,7 +734,6 @@ class Server_BL():
 
         thread = threading.Thread(target=self.download_and_stream_song, args=(song_name, song_artist, link , voting.get_room()))
         thread.start()
-        print(f"Song chosen by users: {song_artist}")
 
     def send_message_to_everybody(self, room, message):
         for usr in self.session:
@@ -542,6 +743,9 @@ class Server_BL():
                 sock.sendall(len(message).to_bytes(4, byteorder='big'))
                 # Send message
                 sock.sendall(message.encode())
+
+
+
 
 
     def count_users(self, room):
@@ -558,7 +762,7 @@ class Server_BL():
     def get_recommendations(self, song, recent_songs, session, room):
 
         response_text = get_songs_by_genre(room)
-        message = f"VOTING 4 {room} {response_text}"
+        message = f"POLL 4 {room} {response_text}"
 
         for voting in self.votings:
             if voting.get_room() == room:
