@@ -1,28 +1,28 @@
 # -*- coding: utf-8 -*-from pydub import AudioSegment
+from selectors import SelectSelector
 
 from client_gui import *
+import re
+import random
 # Constants
-
-
-# Images
-BTN_IMAGE = "./Images/GUI - button small.png"
-BG_IMAGE = "./Images/GUI - BG Login.png"
 
 # Font
 FONT = "Calibri"
-FONT_BUTTON = (FONT, 16)
 
 
 # Class CLoginGui
 class CLoginGUI(QtWidgets.QWidget):
 
     def __init__(self):
+        # Calls the constructor of the parent class
         super().__init__()
 
+        # Create client_bl object
         self.client = Client_BL(SRV_IP, SRV_PORT)
         # Set window properties
         self.setWindowTitle("Login")
         self.setGeometry(500, 500, 700, 400)
+        # connect to server
         self.sock = self.client.connect()
         self.create_ui()
 
@@ -30,7 +30,6 @@ class CLoginGUI(QtWidgets.QWidget):
     def create_ui(self):
         # if client connected
         if (self.sock):
-
             # Guest button
             self.guest_button = QtWidgets.QPushButton("Guest", self)
             self.guest_button.setGeometry(QtCore.QRect(410, 320, 150, 60))
@@ -82,9 +81,37 @@ class CLoginGUI(QtWidgets.QWidget):
 
 
     def on_click_guest(self):
-        self.username_enter.setText('sanek')
-        self.password_enter.setText('gg')
-        self.on_click_login()
+        '''I dont use encryption here because anyway after guest closes chat guest`s data deletes, and while guest in session anyway nobody can log in in his acc'''
+        '''Generating on client side random nickname starting which guest and five random numbers after it,
+        sending that shit to server which returns boolean which indicate if there is already a user with such nickname or not.
+        '''
+        guest_id = random.randint(10000, 99999)
+        nickname = f"Guest_{guest_id}"
+
+        '''Sending generated nickname to server, if there is not such nickname, server register it'''
+        self.send(f"GUEST {nickname}")
+
+        # receive response if such nam already registered
+        msg = self.receive_message()
+
+        # if not
+        if msg == '0':
+            self.new_window = start(self.client, nickname)  # ? Store reference
+            self.hide()
+        # if there is already a user with such name, generate one more time
+        else:
+            self.on_click_guest()
+
+
+
+
+    def receive_message(self):
+        # Get message size
+        msg_size = int.from_bytes(self.sock.recv(4), byteorder='big')
+        # Get message from  client
+        msg = self.sock.recv(msg_size).decode(FORMAT)
+        return msg
+
 
     def on_click_signup(self):
         # Get login and password values from fields
@@ -97,7 +124,7 @@ class CLoginGUI(QtWidgets.QWidget):
 
         # Create error label
         self.err_msg = QtWidgets.QLabel(self)
-        self.err_msg.setGeometry(QtCore.QRect(70, 240, 500, 60))
+        self.err_msg.setGeometry(QtCore.QRect(40, 240, 500, 60))
         self.err_msg.setStyleSheet("font-size: 35px; color: red;")
         self.err_msg.show()  # Ensure label is displayed
         self.username_enter.clear()
@@ -106,19 +133,22 @@ class CLoginGUI(QtWidgets.QWidget):
         # Checking if the fields are empty
         if not login or not password:
             self.err_msg.setText("Fields cannot be empty")
+        # If login or password contains non english character
+        elif bool(re.search(r'[^a-zA-Z0-9]', login)) == True or bool(re.search(r'[^a-zA-Z0-9]', password)) == True:
+            self.err_msg.setText("English characters only!")
+        elif len(login) < 4:
+            self.err_msg.setText("Login must be at least 4 chars")
+        elif len(password) < 4:
+            self.err_msg.setText("Password must be at least 4 chars")
 
         # Checking if there is spaces in login or password
-        elif (" " in login or " " in password):
+        elif " " in login or " " in password:
             self.err_msg.setText("Forbidden symbols")
-
         else:
-            self.send("REG" + " " + login + " " + password)
-            # Get message size
-            msg_size = int.from_bytes(self.sock.recv(4), byteorder='big')
-
-
-            # Get message from  client
-            msg = self.sock.recv(msg_size).decode(FORMAT)
+            # Sending request to server (cmd, login, encrypted password)
+            self.send(f"REG {login} {self.client.encrypt_with_public_key(password)}")
+            msg = self.receive_message()
+            # Insert the response into the GUI
             self.err_msg.setText(msg)
             if msg == 'Successfully registered':
                 self.err_msg.setStyleSheet("font-size: 35px; color: green;")
@@ -126,14 +156,17 @@ class CLoginGUI(QtWidgets.QWidget):
             else:
                 self.err_msg.setStyleSheet("font-size: 35px; color: red;")
             self.err_msg.show()  # Ensure label is displayed
+            # clear fields
             self.username_enter.clear()
             self.password_enter.clear()
+
+    def send_encrypted_data(self, public_key, data):
+        pass
 
     def on_click_login(self):
         login = self.username_enter.text().strip()
         password = self.password_enter.text().strip()
 
-        print(login, password)
 
         # Remove previous error label if it exists
         if hasattr(self, 'err_msg'):
@@ -149,22 +182,20 @@ class CLoginGUI(QtWidgets.QWidget):
         # Checking if the fields are empty
         if not login or not password:
             self.err_msg.setText("Fields cannot be empty")
+        elif bool(re.search(r'[^a-zA-Z0-9]', login)) == True or bool(re.search(r'[^a-zA-Z0-9]', password)) == True:
+            self.err_msg.setText("English characters only!")
 
         # Checking if there is spaces in login or password
-        elif (" " in login or " " in password):
+        elif " " in login or " " in password:
             self.err_msg.setText("Forbidden symbols")
-
         else:
-            self.send("LOG" + " " + login + " " + password)
-            print("sent")
-            # Get message size
-            msg_size = int.from_bytes(self.sock.recv(4), byteorder='big')
-            # Get message from  client
-            msg = self.sock.recv(msg_size).decode(FORMAT)
-
-            print("still alive. message " + msg)
+            self.send(f"LOG {login} {self.client.encrypt_with_public_key(password)}")
+            msg = self.receive_message()
+            # if data is correct
             if(msg == 'true'):
-                self.new_window = start(self.client, login)  # ? Store reference
+                # starting main window
+                self.new_window = start(self.client, login)
+                # hiding current window
                 self.hide()
             else:
                 self.err_msg.setText("Wrong password or login")
