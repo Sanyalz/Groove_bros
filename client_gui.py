@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLa
 from PyQt5.QtCore import Qt
 
 # Default IP and port
-SRV_IP = "10.100.102.166"
+SRV_IP = "10.100.102.120"
 SRV_PORT = "8822"
 
 
@@ -17,17 +17,23 @@ class Client_GUI(QtWidgets.QWidget):
         super().__init__()
         # Set window properties+
         self.setWindowTitle("Groove bros")
-        self.setGeometry(0, 0, 2200, 1400)
+
+        self.NumberOfUsers = 0
+        self.setGeometry(0, 0, 1500, 850)
 
         # Saving client`s data received from Login
         self.client = client
         self.client_login = login
+        self.client.set_login(login)
+
+        self.If_Voted_for_skip = 0
+
 
         # Adding client_gui callbacks
         self.client.add_callbacks(self.new_message_in_chat, self.create_vote,
                                   self.on_vote_selected, self.timer,
                                   self.update_suggestion_buttons, self.new_song_voting,
-                                  self.del_button, self.display_song_info)
+                                  self.del_button, self.display_song_info  , self.new_usr, self.create_skip_poll, self.update_barchart, self.del_skip_poll, self.clear_song_info)
 
         # Starting thread which listens to server commands
         thread = threading.Thread(target=self.client.receive, args=())
@@ -49,7 +55,7 @@ class Client_GUI(QtWidgets.QWidget):
         self.room1_button = QtWidgets.QPushButton(self)
         self.room1_button.setText("Rock")
         self.room1_button.move(50, 50)
-        self.room1_button.resize(400, 150)
+        self.room1_button.resize(350, 120)
         self.room1_button.setStyleSheet("font-size: 35px;")
         self.room1_button.clicked.connect(lambda: self.on_click_room('Rock'))
 
@@ -57,7 +63,7 @@ class Client_GUI(QtWidgets.QWidget):
         self.room2_button = QtWidgets.QPushButton(self)
         self.room2_button.setText("Rap")
         self.room2_button.move(50, 300)
-        self.room2_button.resize(400, 150)
+        self.room2_button.resize(350, 120)
         self.room2_button.setStyleSheet("font-size: 35px;")
         self.room2_button.clicked.connect(lambda: self.on_click_room("Rap"))
 
@@ -65,13 +71,13 @@ class Client_GUI(QtWidgets.QWidget):
         self.room3_button = QtWidgets.QPushButton(self)
         self.room3_button.setText("Pop")
         self.room3_button.move(50, 550)
-        self.room3_button.resize(400, 150)
+        self.room3_button.resize(350, 120)
         self.room3_button.setStyleSheet("font-size: 35px;")
         self.room3_button.clicked.connect(lambda: self.on_click_room("Pop"))
 
         # Create separate line
         self.line = QtWidgets.QFrame(self)
-        self.line.setGeometry(QtCore.QRect(600, -80, 31, 2000))
+        self.line.setGeometry(QtCore.QRect(400, -80, 31, 2000))
         self.line.setFrameShape(QtWidgets.QFrame.VLine)
         self.line.setFrameShadow(QtWidgets.QFrame.Sunken)
         self.line.setObjectName("line")
@@ -93,12 +99,12 @@ class Client_GUI(QtWidgets.QWidget):
         self.label.setFont(font)
 
         # Position the text at (100, 100)
-        self.label.setGeometry(QtCore.QRect(1100, 150, 515, 50))
+        self.label.setGeometry(QtCore.QRect(900, 150, 515, 50))
 
         # Yes button
         self.con_button = QtWidgets.QPushButton(self)
         self.con_button.setText("Yes")
-        self.con_button.move(1050, 250)
+        self.con_button.move(800, 250)
         self.con_button.resize(200, 75)
         self.con_button.clicked.connect(self.on_click_connect)
         self.con_button.setStyleSheet("font-size: 30px;")
@@ -106,7 +112,7 @@ class Client_GUI(QtWidgets.QWidget):
         # Leave button
         self.leave_but = QtWidgets.QPushButton(self)
         self.leave_but.setText("Leave")
-        self.leave_but.move(1450, 250)
+        self.leave_but.move(1100, 250)
         self.leave_but.resize(200, 75)
         self.leave_but.clicked.connect(self.on_click_lev)
         self.leave_but.setStyleSheet("font-size: 30px;")
@@ -144,7 +150,7 @@ class Client_GUI(QtWidgets.QWidget):
         else:
             # Create the main layout if it doesn't exist
             self.main_layout = QtWidgets.QVBoxLayout(self)
-            self.main_layout.setContentsMargins(620, 20, 20, 20)
+            self.main_layout.setContentsMargins(420, 20, 20, 20)
             self.main_layout.setSpacing(10)
 
         # Create top panel for song info and leave button
@@ -155,7 +161,7 @@ class Client_GUI(QtWidgets.QWidget):
 
         # Album cover container
         self.album_cover = QtWidgets.QLabel()
-        self.album_cover.setFixedSize(300, 300)
+        self.album_cover.setFixedSize(200, 200)
         self.album_cover.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
         self.top_panel_layout.addWidget(self.album_cover)
 
@@ -176,14 +182,19 @@ class Client_GUI(QtWidgets.QWidget):
         self.song_name_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
         self.song_info_layout.addWidget(self.song_name_label)
 
+        # Artist name label
+        self.artist_name_label = QtWidgets.QLabel()
+        self.artist_name_label.setStyleSheet("""
+            font-size: 24px;
+            color: #777777;
+        """)
+        self.artist_name_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.song_info_layout.addWidget(self.artist_name_label)
+
+
         # Add stretch to push leave button to right
         self.top_panel_layout.addWidget(self.song_info_container)
         self.top_panel_layout.addStretch()
-
-        # Skip button layout (just above chat scroll area)
-        self.skip_button_layout = QtWidgets.QHBoxLayout()
-        self.skip_button_layout.setContentsMargins(0, 10, 0, 10)
-        self.skip_button_layout.addStretch()
 
         # Right-side button container (vertical layout)
         self.right_button_container = QtWidgets.QWidget()
@@ -210,18 +221,7 @@ class Client_GUI(QtWidgets.QWidget):
         self.leave_button.clicked.connect(self.leave)
         self.right_button_layout.addWidget(self.leave_button)
 
-        # Skip button
-        self.skip_button = QtWidgets.QPushButton("Skip")
-        self.skip_button.setStyleSheet("""
-            background-color: #4D79FF;
-            color: white;
-            font-size: 30px;
-            padding: 8px 15px;
-            border-radius: 10px;
-        """)
-        self.skip_button.setFixedSize(150, 60)
-        self.skip_button.clicked.connect(self.skip_song)
-        self.right_button_layout.addWidget(self.skip_button)
+
 
         # Add right-side container to top panel layout
         self.top_panel_layout.addWidget(self.right_button_container, alignment=QtCore.Qt.AlignTop)
@@ -237,7 +237,7 @@ class Client_GUI(QtWidgets.QWidget):
         self.message_area.setStyleSheet("background-color: #f0f0f0; padding: 10px;")
         self.message_area_layout = QtWidgets.QVBoxLayout(self.message_area)
         self.message_area_layout.setAlignment(QtCore.Qt.AlignTop)
-        self.message_area_layout.setSpacing(5)
+        self.message_area_layout.setSpacing(1)
 
         # Scroll area
         self.scroll_area = QtWidgets.QScrollArea()
@@ -277,7 +277,9 @@ class Client_GUI(QtWidgets.QWidget):
         self.setLayout(self.main_layout)
         self.find_song_func()
         # Sending the message to server
-        self.client.send(f"CON {self.room} " + self.client_login)
+        self.client.send(f"CON {self.room} {self.client_login} {self.client.get_public_key()}")
+    def new_usr(self, num):
+        self.NumberOfUsers += int(num)
 
     def skip_song(self):
         self.create_skip_poll()
@@ -286,8 +288,10 @@ class Client_GUI(QtWidgets.QWidget):
         # Get text from input field
         message = self.message_input.text()
         if message:
-            self.client.send(f"MSG {self.room} " + self.client_login + " " + message)
+            message = self.client.encrypt_message(message)
+            self.client.send(f"MSG {self.room} {self.client_login} {message}")
             self.message_input.clear()
+
 
     # Func which responsible for displaying messages in chat
     def new_message_in_chat(self, msg_list):
@@ -295,79 +299,59 @@ class Client_GUI(QtWidgets.QWidget):
             for message in msg_list:
                 login, message = message[0], message[1]
                 color = '#E0E0E0'
-                if (login == 'Dj_Arbuzz'):
+                if login == 'Dj_Arbuzz':
                     color = '#edf2ff'
-                    width = "2000"
+                    width = "1200"  # Slightly larger for DJ if needed
                 else:
                     message = self.split_message(message, 30)
-                    width = "800"
+                    width = "600"
 
-                if (self.client_login == login):
+                if self.client_login == login:
                     self.label = QtWidgets.QLabel(message, self)
-                    self.label.setAlignment(QtCore.Qt.AlignRight)  # Align the text to the right
-                    # Light blue background with padding and rounded corners
+                    self.label.setAlignment(QtCore.Qt.AlignRight)
                     self.label.setStyleSheet(f"""
-                                            background-color: #A3C8E4;  /* Light blue background */
-                                            padding: 15px;  /* Add more padding inside the label */
-                                            border-radius: 20px;  /* Rounded corners */
-                                            font-size: 35px;  /* Increase font size */
-                                            max-width: 800px;  /* Increase max width so text stays on one line */
-                                        """)
-
-                    # Create a layout for the label inside the widget
-
-                    # Set the layout of the widget to ensure the size is exactly as the label's content
-
+                        background-color: #A3C8E4;
+                        padding: 8px;
+                        border-radius: 12px;
+                        font-size: 20px;
+                        max-width: {width}px;
+                    """)
                     self.label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-
-                    # Add the custom widget to the message area layout
                     self.message_area_layout.addWidget(self.label, alignment=QtCore.Qt.AlignRight)
 
-                    # Clear the input field
-
-
-                elif (self.last_mes_log == login):
-
+                elif self.last_mes_log == login:
                     self.label = QtWidgets.QLabel(message, self)
                     self.label.setAlignment(QtCore.Qt.AlignLeft)
                     self.label.setStyleSheet(f"""
-                                            background-color: {color};  /* Light blue background */
-                                            padding: 15px;  /* Add more padding inside the label */
-                                            border-radius: 20px;  /* Rounded corners */
-                                            font-size: 35px;  /* Increase font size */
-                                            max-width: {width}px;  /* Increase max width so text stays on one line */
-
-                                        """)
+                        background-color: {color};
+                        padding: 8px;
+                        border-radius: 12px;
+                        font-size: 20px;
+                        max-width: {width}px;
+                    """)
                     self.label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-
-                    # Add the custom widget to the message area layout
                     self.message_area_layout.addWidget(self.label, alignment=QtCore.Qt.AlignLeft)
-                else:
 
+                else:
                     nickname_label = QtWidgets.QLabel(login, self)
-                    nickname_label.setStyleSheet("font-size: 20px; color: gray; font-weight: bold;")
+                    nickname_label.setStyleSheet("font-size: 14px; color: gray; font-weight: bold;")
                     self.message_area_layout.addWidget(nickname_label, alignment=QtCore.Qt.AlignLeft)
 
-                    message_label = QtWidgets.QLabel(message, self)  # Enable word wrapping for long messages
-                    message_label.setAlignment(QtCore.Qt.AlignLeft)  # Align the text to the right
+                    message_label = QtWidgets.QLabel(message, self)
+                    message_label.setAlignment(QtCore.Qt.AlignLeft)
                     message_label.setStyleSheet(f"""
-                                                        background-color: {color};  /* Light blue background */
-                                                        padding: 15px;  /* Add more padding inside the label */
-                                                        border-radius: 20px;  /* Rounded corners */
-                                                        font-size: 35px;  /* Increase font size */
-                                                        max-width: {width}px;  /* Increase max width so text stays on one line */
-                                                    """)
-
-                    # Add the message label to the message area layout
+                        background-color: {color};
+                        padding: 8px;
+                        border-radius: 12px;
+                        font-size: 20px;
+                        max-width: {width}px;
+                    """)
                     self.message_area_layout.addWidget(message_label, alignment=QtCore.Qt.AlignLeft)
 
-                    # Clear the input field after sending the message
 
-                    # Automatically scroll to the bottom of the scroll area
-
-                scrollbar = self.message_area.findChild(QtWidgets.QScrollBar)
-                if scrollbar:
-                    scrollbar.setValue(scrollbar.maximum())
+                # Scroll to the bottom
+                QtCore.QTimer.singleShot(100, lambda: self.scroll_area.verticalScrollBar().setValue(
+                    self.scroll_area.verticalScrollBar().maximum()))
 
                 self.last_mes_log = login
         except:
@@ -517,17 +501,14 @@ class Client_GUI(QtWidgets.QWidget):
             item = self.confirm_frame_layout.takeAt(0)
             widget = item.widget()
             if widget:
-                print(f"Deleting widget: {widget}")  # Debugging
                 widget.deleteLater()  # Safely delete the widget
 
         # Ensure overlay and confirm_frame are properly deleted
         if self.overlay:
-            print("Deleting overlay")  # Debugging
             self.overlay.deleteLater()
             self.overlay = None  # Remove reference
 
         if self.confirm_frame:
-            print("Deleting confirm_frame")  # Debugging
             self.confirm_frame.deleteLater()
             self.confirm_frame = None  # Remove reference
 
@@ -535,7 +516,6 @@ class Client_GUI(QtWidgets.QWidget):
         QApplication.processEvents()
 
         # Call voting_window after a short delay to avoid recursion or UI issues
-        print("Starting timer to call voting_window")  # Debugging
         self.find_song_func()
 
     def send_song(self):
@@ -553,15 +533,12 @@ class Client_GUI(QtWidgets.QWidget):
 
         """
         Update the suggestion buttons with a list of song names.
-        :param song_names: A list of up to 5 song names to display on the buttons.
+        A list of up to 5 song names to display on the buttons.
         """
-        if not song_names or len(song_names) > 5:
-            print("The list of song names must contain between 1 and 5 items.")
 
 
         for button in self.suggestion_buttons:
             button.setVisible(False)
-        print("buttons disabled")
 
         i = 0
         for song in song_names:
@@ -593,107 +570,101 @@ class Client_GUI(QtWidgets.QWidget):
                 button.setVisible(False)
 
     def create_vote(self, songs_dict, timer):
-        # Nickname label
+        attrs = [
+            "vote_widget", "nickname_label", "vote_layout",
+            "vote_label", "vote_buttons", "vote_progress_bars",
+            "vote_percentages", "addsong_button", "last_layout",
+            "total_votes_label", "timer_label"
+        ]
+        for attr in attrs:
+            if hasattr(self, attr):
+                widget = getattr(self, attr)
+                try:
+                    if isinstance(widget, QtWidgets.QWidget):
+                        widget.deleteLater()
+                    elif isinstance(widget, (list, dict)):
+                        for item in widget.values() if isinstance(widget, dict) else widget:
+                            if isinstance(item, QtWidgets.QWidget):
+                                item.deleteLater()
+                except Exception as e:
+                    print(f"Failed to delete {attr}: {e}")
+                delattr(self, attr)
         self.nickname_label = QtWidgets.QLabel('Dj_Arbuzz', self)
-        self.nickname_label.setStyleSheet("font-size: 20px; color: gray; font-weight: bold;")
+        self.nickname_label.setStyleSheet("font-size: 14px; color: gray; font-weight: bold;")
         self.message_area_layout.addWidget(self.nickname_label, alignment=QtCore.Qt.AlignLeft)
 
-
-        # Whole message widget
         self.vote_widget = QtWidgets.QWidget(self)
         self.vote_widget.setStyleSheet("""
             QWidget {
-                background-color: #edf2ff;  /* Light blue background */
-                padding-top: 20px;
-                padding-left: -40px;
-                border-radius: 30px; 
-                max-width: 800px;  
+                background-color: #edf2ff;
+                padding: 10px;
+                border-radius: 15px;
+                max-width: 600px;
             }
         """)
+        self.vote_widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
-        # Ensure the widget expands horizontally
-        self.vote_widget.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding,  # Horizontal policy
-            QtWidgets.QSizePolicy.Fixed  # Vertical policy
-        )
-
-        # Vertical layout for songs in voting
         self.vote_layout = QtWidgets.QVBoxLayout(self.vote_widget)
         self.vote_layout.setAlignment(QtCore.Qt.AlignLeft)
-        self.vote_layout.setSpacing(10)  # Reduce spacing between items in the layout
+        self.vote_layout.setSpacing(6)
 
-        # Create vote layout
         self.vote_label = QtWidgets.QLabel("Choose song you would like to be next!", self)
         self.vote_label.setStyleSheet("""
-            font-size: 30px;
+            font-size: 18px;
             font-weight: bold;
-            color: #333333; 
-            margin-bottom: 30; 
+            color: #333333;
+            margin-bottom: 10px;
         """)
         self.vote_layout.addWidget(self.vote_label)
-        # Circle buttons list
-        self.vote_buttons = []
-        # Dictionary for saving progress bar values (song: percentage)
-        self.vote_progress_bars = {}
-        # Dictionary for labels which are displaying percentage (song: label)
-        self.vote_percentages = {}
-        # Just creating clone of dictionary with votes
-        self.vote_counts = songs_dict
 
-        # Total votes calculation
+        self.vote_buttons = []
+        self.vote_progress_bars = {}
+        self.vote_percentages = {}
+        self.vote_counts = songs_dict
         total_votes = sum(songs_dict.values())
 
-        # Loop for each pair of key:value in songs votes dictionary
         for song, votes in songs_dict.items():
-            whole_string = song
             song_name = song.split("::::")[0]
             artist = song.split("::::")[1].split(":::::")[0]
-            self.voting_option(whole_string, song_name, artist, votes, total_votes)
+            self.voting_option(song, song_name, artist, votes, total_votes)
 
-        # Horizontal layout for "add song button" button
         add_song_layout = QtWidgets.QHBoxLayout()
         self.addsong_button = QtWidgets.QPushButton(self)
         self.addsong_button.setText("+ Add song")
-        # Set stylesheet to make the button border and background visible
         self.addsong_button.setStyleSheet("""
             QPushButton {
-                font-size: 30px;
-                background-color: #c5adff;  /* Green background */
-                color: black;               /* White text */  
-                border-radius: 20px;        /* Rounded corners */
-                padding: 10px;              /* Padding inside the button */
-                margin-left: 200px;
-                margin-right: 200px;
+                font-size: 18px;
+                background-color: #c5adff;
+                color: black;
+                border-radius: 12px;
+                padding: 6px;
+                margin-left: 100px;
+                margin-right: 100px;
             }
             QPushButton:hover {
-                background-color: #45a049;  /* Darker green on hover */
+                background-color: #a48cff;
             }
         """)
-
         self.addsong_button.clicked.connect(self.on_click_add_song)
         add_song_layout.addWidget(self.addsong_button)
         self.vote_layout.addLayout(add_song_layout)
 
-        # Horizontal layout for timer and total votes labels
         self.last_layout = QtWidgets.QHBoxLayout()
-        self.last_layout.setSpacing(10)
+        self.last_layout.setSpacing(8)
 
-        # Add a general votes counter at the end
         self.total_votes_label = QtWidgets.QLabel("Voted: 0", self)
         self.total_votes_label.setStyleSheet("""
-            font-size: 25px;
+            font-size: 16px;
             font-weight: bold;
             color: #333333;
-            margin-top: 20px;
         """)
         self.last_layout.addWidget(self.total_votes_label)
 
         self.timer_label = QtWidgets.QLabel(self)
         self.timer_label.setStyleSheet("""
-            font-size: 25px;
+            font-size: 16px;
             font-weight: bold;
             color: #333333;
-            margin-top: 20px;
         """)
         self.last_layout.addWidget(self.timer_label)
         if timer != 4:
@@ -702,90 +673,91 @@ class Client_GUI(QtWidgets.QWidget):
             thread.start()
 
         self.vote_layout.addLayout(self.last_layout)
-
-        # Add the vote_widget to the main layout
         self.message_area_layout.addWidget(self.vote_widget, alignment=QtCore.Qt.AlignLeft)
 
+        # Scroll to the bottom
+        QtCore.QTimer.singleShot(100, lambda: self.scroll_area.verticalScrollBar().setValue(
+            self.scroll_area.verticalScrollBar().maximum()))
+
     def voting_option(self, whole_string, song, artist, votes, total_votes):
-        # Create container widget for each song option
         song_widget = QtWidgets.QWidget()
         song_layout = QtWidgets.QVBoxLayout(song_widget)
         song_layout.setContentsMargins(0, 0, 0, 0)
-        song_layout.setSpacing(5)
+        song_layout.setSpacing(4)
 
-        # Horizontal layout for voting elements
         vote_row = QtWidgets.QHBoxLayout()
-        vote_row.setSpacing(10)
+        vote_row.setSpacing(6)
 
-        # Voting button
         button = QtWidgets.QPushButton()
-        button.setFixedSize(30, 30)
+        button.setFixedSize(20, 20)  # Equal width and height for a perfect circle
         button.setCheckable(True)
         button.setStyleSheet("""
             QPushButton {
                 background-color: white;
                 border: 2px solid #3498db;
-                border-radius: 15px;
+                border-radius: 12px;
+                min-width: 20px;
+                max-width: 20px;
+                min-height: 20px;
+                max-height: 20px;
+                padding: 0px;
+                margin: 0px;
             }
             QPushButton:checked {
                 background-color: blue;
+                border: none;
             }
         """)
+
         button.clicked.connect(lambda _, s=whole_string, b=button: self.on_vote_selected(s, b, 0))
         vote_row.addWidget(button)
 
-        # Song info
         text_layout = QtWidgets.QVBoxLayout()
-        text_layout.setSpacing(2)
+        text_layout.setSpacing(1)
 
         song_label = QtWidgets.QLabel(song)
-        song_label.setStyleSheet("font-size: 30px; color: #000000;")
+        song_label.setStyleSheet("font-size: 16px; color: #000000;")
 
         artist_label = QtWidgets.QLabel(artist)
-        artist_label.setStyleSheet("font-size: 20px; color: #666666; margin-top: -10px;")
+        artist_label.setStyleSheet("font-size: 12px; color: #666666;")
 
         text_layout.addWidget(song_label)
         text_layout.addWidget(artist_label)
         vote_row.addLayout(text_layout)
 
-        # Percentage label
         percentage_label = QtWidgets.QLabel("0%")
-        percentage_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #333333;")
+        percentage_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333;")
         percentage_label.setVisible(False)
         vote_row.addWidget(percentage_label)
 
         vote_row.addStretch()
         song_layout.addLayout(vote_row)
 
-        # Progress bar
         progress_bar = QtWidgets.QProgressBar()
         progress_bar.setRange(0, 100)
-        progress_bar.setValue(int((votes / total_votes) * 100) if total_votes > 0 else 7)
+        progress_bar.setValue(int((votes / total_votes) * 100) if total_votes > 0 else 2)
         progress_bar.setTextVisible(False)
         progress_bar.setStyleSheet("""
             QProgressBar {
-                height: 10px;
+                height: 6px;
                 background: transparent;
-                border-radius: 5px;
+                border-radius: 3px;
             }
             QProgressBar::chunk {
                 background: #295af0;
-                border-radius: 5px;
+                border-radius: 3px;
             }
         """)
         song_layout.addWidget(progress_bar)
 
-        # Store references
         self.vote_buttons.append(button)
         self.vote_progress_bars[whole_string] = progress_bar
         self.vote_percentages[whole_string] = percentage_label
         self.vote_counts[whole_string] = votes
 
-        # Add to main voting layout
         self.vote_layout.insertWidget(1, song_widget)
 
     def new_song_voting(self, song):
-        print("Adding song to voting list")  # Debugging
         votes = 0
         total_votes = int(self.total_votes_label.text().split(" ")[-1])  # Get current total votes
         art = song.split("::::")
@@ -844,11 +816,12 @@ class Client_GUI(QtWidgets.QWidget):
                 self.vote_percentages[song].setVisible(total_votes > 0)
 
     # When server starts to stream the song, that function runs and displays song's info and album cover
-    def display_song_info(self, song_name, album_cover_url):
+    def display_song_info(self, artist, song_name, album_cover_url):
         """Displays the currently playing song info"""
         try:
-            # Update song name
+            # Update song and artist name
             self.song_name_label.setText(song_name)
+            self.artist_name_label.setText(artist)
 
             # Load album cover
             self.load_album_cover(album_cover_url)
@@ -856,17 +829,30 @@ class Client_GUI(QtWidgets.QWidget):
         except Exception as e:
             print(f"Error in stream_start: {e}")
 
+    def clear_song_info(self):
+        self.del_skip_poll()
+        """Clears the album cover and song name display."""
+        try:
+            self.song_name_label.setText("")
+            self.artist_name_label.setText("")
+
+            blank_pixmap = QtGui.QPixmap(200, 200)
+            blank_pixmap.fill(QtGui.QColor(240, 240, 240))  # light gray
+            self.album_cover.setPixmap(blank_pixmap)
+
+            print("Cleared song info.")
+        except Exception as e:
+            print(f"Error clearing song info: {e}")
+
     # Download the album cover into RAM
     def load_album_cover(self, url):
         """Asynchronously loads album cover from URL"""
         try:
-            print(f"Loading album cover from: {url}")
             self.manager = QtNetwork.QNetworkAccessManager()
             self.request = QtNetwork.QNetworkRequest(QtCore.QUrl(url))
             self.reply = self.manager.get(self.request)
             self.reply.finished.connect(self.on_image_loaded)
         except Exception as e:
-            print(f"Error starting image load: {e}")
             self.set_placeholder_image()
 
     # As image downloaded, that func runs
@@ -878,16 +864,14 @@ class Client_GUI(QtWidgets.QWidget):
                 image = QtGui.QImage()
                 image.loadFromData(data)
                 pixmap = QtGui.QPixmap.fromImage(image).scaled(
-                    300, 300,
+                    200, 200,
                     QtCore.Qt.KeepAspectRatio,
                     QtCore.Qt.SmoothTransformation
                 )
                 self.album_cover.setPixmap(pixmap)
             else:
-                print(f"Error loading image: {self.reply.errorString()}")
                 self.set_placeholder_image()
         except Exception as e:
-            print(f"Error processing loaded image: {e}")
             self.set_placeholder_image()
         finally:
             self.reply.deleteLater()
@@ -896,7 +880,7 @@ class Client_GUI(QtWidgets.QWidget):
         """Sets a placeholder image when loading fails"""
         try:
             # Create a simple placeholder
-            pixmap = QtGui.QPixmap(300, 300)
+            pixmap = QtGui.QPixmap(200, 200)
             pixmap.fill(QtGui.QColor(200, 200, 200))
 
             # Add text to placeholder
@@ -908,7 +892,7 @@ class Client_GUI(QtWidgets.QWidget):
 
             self.album_cover.setPixmap(pixmap)
         except Exception as e:
-            print(f"Error creating placeholder: {e}")
+            pass
 
     # Function which called every second as the timer begins
     def timer(self):
@@ -937,146 +921,167 @@ class Client_GUI(QtWidgets.QWidget):
     def create_skip_poll(self):
         # Nickname label
         self.nickname_label = QtWidgets.QLabel('Dj_Arbuzz', self)
-        self.nickname_label.setStyleSheet("font-size: 20px; color: gray; font-weight: bold;")
+        self.nickname_label.setStyleSheet("font-size: 14px; color: gray; font-weight: bold;")
         self.message_area_layout.addWidget(self.nickname_label, alignment=QtCore.Qt.AlignLeft)
 
-        # Whole message widget
+        # Poll container
         self.skip_widget = QtWidgets.QWidget(self)
         self.skip_widget.setStyleSheet("""
             QWidget {
                 background-color: #edf2ff;
-                padding-top: 20px;
-                padding-left: -40px;
-                border-radius: 30px; 
-                max-width: 800px;  
+                padding: 10px;
+                border-radius: 15px; 
+                max-width: 600px;  
             }
         """)
-
-        # Size policy
         self.skip_widget.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding,
             QtWidgets.QSizePolicy.Fixed
         )
 
-        # Vertical layout for skip poll
+        # Poll layout
         self.skip_layout = QtWidgets.QVBoxLayout(self.skip_widget)
         self.skip_layout.setAlignment(QtCore.Qt.AlignLeft)
-        self.skip_layout.setSpacing(10)
+        self.skip_layout.setSpacing(6)
 
         # Poll question
         self.skip_label = QtWidgets.QLabel("Skip to the next song?", self)
         self.skip_label.setStyleSheet("""
-            font-size: 30px;
+            font-size: 18px;
             font-weight: bold;
             color: #333333; 
-            margin-bottom: 30px; 
+            margin-bottom: 10px; 
         """)
         self.skip_layout.addWidget(self.skip_label)
 
         # Voting data
-        self.skip_votes = {"Yes": 0, "No": 0}
+        self.skip_votes = {"Yes": 0, "No": self.NumberOfUsers}
         self.skip_buttons = []
         self.skip_progress_bars = {}
         self.skip_percentages = {}
 
-        # Create Yes/No options
+        # Create poll option(s)
         self.create_skip_option("Yes", "Yes", 0)
 
-        # Add to main layout
+        # Add poll widget to layout
         self.message_area_layout.addWidget(self.skip_widget, alignment=QtCore.Qt.AlignLeft)
+
+        # Scroll to the bottom
+        QtCore.QTimer.singleShot(100, lambda: self.scroll_area.verticalScrollBar().setValue(
+            self.scroll_area.verticalScrollBar().maximum()))
 
     def create_skip_option(self, option_id, option_text, votes):
         # Container widget
         option_widget = QtWidgets.QWidget()
         option_layout = QtWidgets.QVBoxLayout(option_widget)
         option_layout.setContentsMargins(0, 0, 0, 0)
-        option_layout.setSpacing(5)
+        option_layout.setSpacing(4)
 
-        # Horizontal layout for voting elements
+        # Voting row
         vote_row = QtWidgets.QHBoxLayout()
-        vote_row.setSpacing(10)
+        vote_row.setSpacing(6)
 
-        # Voting button
-        button = QtWidgets.QPushButton()
-        button.setFixedSize(30, 30)
-        button.setCheckable(True)
-        button.setStyleSheet("""
-            QPushButton {
-                background-color: white;
-                border: 2px solid #3498db;
-                border-radius: 15px;
-            }
-            QPushButton:checked {
-                background-color: blue;
-            }
-        """)
-        button.clicked.connect(lambda _, s=option_id, b=button: self.on_skip_vote_selected(s, b))
-        vote_row.addWidget(button)
+        # Vote button
+        self.skip_button = QtWidgets.QPushButton()
+        self.skip_button.setFixedSize(20, 20)  # Equal width and height for a perfect circle
+        self.skip_button.setCheckable(True)
+        self.skip_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: white;
+                        border: 2px solid #3498db;
+                        border-radius: 12px;
+                        min-width: 20px;
+                        max-width: 20px;
+                        min-height: 20px;
+                        max-height: 20px;
+                        padding: 0px;
+                        margin: 0px;
+                    }
+                    QPushButton:checked {
+                        background-color: blue;
+                        border: none;
+                    }
+                """)
+        self.skip_button.clicked.connect(self.on_skip_vote_selected)
+        vote_row.addWidget(self.skip_button)
 
-        # Option text
+        # Option label
         option_label = QtWidgets.QLabel(option_text)
-        option_label.setStyleSheet("font-size: 30px; color: #000000;")
+        option_label.setStyleSheet("font-size: 16px; color: #000000;")
         vote_row.addWidget(option_label)
 
         # Percentage label
-        percentage_label = QtWidgets.QLabel("0%")
-        percentage_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #333333;")
-        percentage_label.setVisible(False)
-        vote_row.addWidget(percentage_label)
+        self.percentage_label = QtWidgets.QLabel("0%")
+        self.percentage_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333;")
+        self.percentage_label.setVisible(True)
+        vote_row.addWidget(self.percentage_label)
 
         vote_row.addStretch()
         option_layout.addLayout(vote_row)
 
         # Progress bar
-        progress_bar = QtWidgets.QProgressBar()
-        progress_bar.setRange(0, 100)
-        progress_bar.setValue(0)
-        progress_bar.setTextVisible(False)
-        progress_bar.setStyleSheet("""
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
             QProgressBar {
-                height: 10px;
+                height: 6px;
                 background: transparent;
-                border-radius: 5px;
+                border-radius: 3px;
             }
             QProgressBar::chunk {
                 background: #295af0;
-                border-radius: 5px;
+                border-radius: 3px;
             }
         """)
-        option_layout.addWidget(progress_bar)
+        option_layout.addWidget(self.progress_bar)
 
-        # Store references
-        self.skip_buttons.append(button)
-        self.skip_progress_bars[option_id] = progress_bar
-        self.skip_percentages[option_id] = percentage_label
-        self.skip_votes[option_id] = votes
 
-        # Add to layout
+        # Add to poll layout
         self.skip_layout.insertWidget(1, option_widget)
 
-    def on_skip_vote_selected(self, option, button):
-        # Uncheck all other buttons
-        for btn in self.skip_buttons:
-            if btn != button:
-                btn.setChecked(False)
+    def on_skip_vote_selected(self):
+        self.skip_button.setChecked(True)
+        self.skip_button.setEnabled(False)
+        self.If_Voted_for_skip = 1
+        self.client.send(f"SKIP {self.room}")
 
-        # Update votes (this would be connected to your actual voting system)
-        self.skip_votes[option] += 1
 
-        # Calculate total votes
-        total_votes = sum(self.skip_votes.values())
+    def update_barchart(self, voted, all_users):
+        percentage = int(voted/all_users * 100)
 
-        # Update UI
-        for opt in self.skip_votes:
-            percentage = (self.skip_votes[opt] / total_votes * 100) if total_votes > 0 else 0
-            self.skip_progress_bars[opt].setValue(int(percentage))
-            self.skip_percentages[opt].setText(f"{int(percentage)}%")
-            self.skip_percentages[opt].setVisible(total_votes > 0)
+        self.progress_bar.setValue(int(percentage))
+        self.percentage_label.setText(f"{int(percentage)}%")
+        self.percentage_label.setVisible(True)
+
+
+    def del_skip_poll(self):
+        # Safely delete skip_widget if it exists and is not None
+        if hasattr(self, "skip_widget") and self.skip_widget is not None:
+            try:
+                self.skip_widget.deleteLater()
+                self.skip_widget = None
+            except Exception as e:
+                print(f"Error while deleting skip_widget: {e}")
+
+        # Safely delete nickname_label if it exists and is not None
+        if hasattr(self, "nickname_label") and self.nickname_label is not None:
+            try:
+                self.nickname_label.deleteLater()
+                self.nickname_label = None
+            except Exception as e:
+                pass
+
+        # Reset skip vote flag
+        self.If_Voted_for_skip = 0
 
     def leave(self):
         """
         Clears the chat interface and restores the room selection buttons.
         """
+
+
         # Clear the chat-related widgets
         self.clear_layout(self.main_layout)  # Clear the main layout (chat area, input field, etc.)
 
@@ -1090,10 +1095,12 @@ class Client_GUI(QtWidgets.QWidget):
 
         self.client.leave_the_room()
         # Notify the server that the user has left the room
-        self.client.send(f"LEV {self.room} " + self.client_login)
 
+        self.client.send(f"LEV {self.room} {self.client_login} {self.If_Voted_for_skip}")
+
+    # Window was closed by using red cross
     def closeEvent(self, event):
-        print('loh')
+        self.client.send("BYE")
 
     def clear_layout(self, layout):
         """
@@ -1148,10 +1155,8 @@ class Client_GUI(QtWidgets.QWidget):
 
 
 def start(client, login):
-    print("inhallah")  # Debugging
     window = Client_GUI(client, login)
     window.show()
     return window
-
 
 
